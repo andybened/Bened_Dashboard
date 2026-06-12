@@ -1511,15 +1511,26 @@ async function refreshHistList(){
   var body=document.getElementById('cloudHistBody'),busy=document.getElementById('histBusy');
   var r=curRecord();body.innerHTML='';busy.style.display='block';
   try{
-    var out=await apiCall('history',{id:r.id});
+    var hout=await apiCall('history',{id:r.id});
+    var cur=null; try{var lo=await apiCall('load',{id:r.id});cur=lo.record;}catch(e){}
     busy.style.display='none';
-    var vs=(out.versions||[]).sort((a,b)=>(Number(b.saved_at)||0)-(Number(a.saved_at)||0));
-    if(!vs.length){body.innerHTML='<div class="cloud-empty">這筆還沒有歷史版本（存第二次以後才會開始留存舊版）。</div>';return;}
+    // 置頂：目前版本（最新，存在 records 表）
+    if(cur){
+      var cw=cur.updated_at?new Date(Number(cur.updated_at)||cur.updated_at).toLocaleString('zh-TW',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+      var cd=document.createElement('div');cd.className='rec-row';cd.style.borderColor='#2563eb';cd.style.background='#eff6ff';
+      cd.innerHTML='<div><div class="rec-name"></div><div class="rec-meta"></div></div><span style="margin-left:auto;color:#16a34a;font-size:13px;white-space:nowrap">目前版本</span>';
+      cd.querySelector('.rec-name').textContent='★ 目前版本（最新）：'+(cw||'—');
+      cd.querySelector('.rec-meta').textContent=(cur.updated_by?('儲存者 '+cur.updated_by):'');
+      cd.onclick=function(){loadCloudRecord(r.id,r.name);};
+      body.appendChild(cd);
+    }
+    var vs=(hout.versions||[]).sort((a,b)=>(Number(b.saved_at)||0)-(Number(a.saved_at)||0));
+    if(!vs.length){var em=document.createElement('div');em.className='cloud-empty';em.textContent='目前只有最新版本；被覆蓋過的舊版才會留存到這裡。';body.appendChild(em);return;}
     vs.forEach(function(v){
       var when=v.saved_at?new Date(Number(v.saved_at)||v.saved_at).toLocaleString('zh-TW',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
       var div=document.createElement('div');div.className='rec-row';
       div.innerHTML='<div><div class="rec-name"></div><div class="rec-meta"></div></div><span style="margin-left:auto;color:#2563eb;font-size:13px;white-space:nowrap">載入此版 ›</span>';
-      div.querySelector('.rec-name').textContent='版本：'+(when||'—');
+      div.querySelector('.rec-name').textContent='舊版：'+(when||'—');
       div.querySelector('.rec-meta').textContent=(v.saved_by?('儲存者 '+v.saved_by):'');
       div.onclick=function(){loadVersionIntoForm(v.hid);};
       body.appendChild(div);
@@ -1645,7 +1656,7 @@ updateCloudUI();
 <div class="cloud-mask" id="cloudHistMask">
   <div class="cloud-modal">
     <h3>版本紀錄</h3>
-    <p class="hint">這筆記錄每次「雲端儲存」前的舊版都會留存在這裡。點任一版會載入到表單讓你檢視，確認要還原就按「☁ 雲端儲存」存成最新版。</p>
+    <p class="hint">最上面藍底★是「目前版本（最新）」；下面是被覆蓋過的舊版。點任一舊版會載入到表單讓你檢視，確認要還原就按「☁ 雲端儲存」存成最新版（你還原前的版本一樣會被留存，不會弄丟）。</p>
     <div id="cloudHistBody"></div>
     <div class="cloud-busy" id="histBusy" style="display:none">讀取中…</div>
     <div class="cloud-actions">
