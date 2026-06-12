@@ -214,7 +214,7 @@ pre.out-text{font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1
     <button class="btn-undo edit-only" id="btnRedo" onclick="doRedo()" title="取消復原 (Ctrl+Y)" disabled>↪ 下一步</button>
     <button class="edit-only" onclick="saveData()" title="存到這台電腦的本機（暫存）">💾 本機暫存</button>
     <button class="edit-only" onclick="saveAsFile()" title="將目前資料另存為獨立 HTML 檔案">📥 另存新檔</button>
-    <button onclick="clearData()" class="btn-danger">🗑 清除</button>
+    <button onclick="clearData()" class="btn-danger edit-only">🗑 清除</button>
     <span style="width:1px;height:22px;background:rgba(0,0,0,.12);margin:0 4px"></span>
     <span class="save-status" id="cloudRecord" style="font-weight:600">未開啟雲端記錄</span>
     <span class="save-status" id="cloudStatus" style="opacity:.7">雲端未連線</span>
@@ -1225,14 +1225,15 @@ setTimeout(pushUndo,600);
   .cloud-empty{color:#6b7280;font-size:14px;padding:18px 4px;text-align:center}
   .cloud-busy{font-size:13px;color:#2563eb;margin-top:10px}
   /* 唯讀（檢視者）模式 */
-  body.viewer-mode .btn-dashed,
-  body.viewer-mode .btn-danger,
   body.viewer-mode .edit-only{display:none !important}
+  body.viewer-mode .card:not(.viewer-editable) .btn-dashed,
+  body.viewer-mode .card:not(.viewer-editable) .btn-danger{display:none !important}
   body.viewer-mode input:disabled,
   body.viewer-mode select:disabled,
   body.viewer-mode textarea:disabled{background:#f1f5f9 !important;color:#475569 !important;cursor:not-allowed;-webkit-text-fill-color:#475569;opacity:1}
   #viewerBar{position:fixed;top:0;left:0;right:0;background:#1e3a8a;color:#fff;padding:8px 16px;font-size:13px;text-align:center;z-index:9998;display:none}
   body.viewer-mode #viewerBar{display:block}
+  body.viewer-mode #updateBanner{top:34px}
   body.viewer-mode{padding-top:34px}
 </style>
 
@@ -1287,7 +1288,7 @@ var CFG_KEY='ecom_cloud_cfg', CUR_KEY='ecom_cloud_current';
 //   viewKey  : 檢視密語（唯讀，對應後端 VIEW_KEY）
 //   recordId : 預設開啟哪一筆（留空＝自動開最近更新的那筆）
 // 注意：一旦填入檢視密語，任何拿到本頁網址的人都讀得到資料，請自行斟酌。
-var VIEWER_CONFIG = { url:'https://script.google.com/macros/s/AKfycby5E-8PrmxPSRbGCE4U2PrWbS8yEmhyMLSQKyN7oNr6TzmjMWmB4l9oEudsqsZqyFev/exec', viewKey:'View_Dashboard', recordId:'' };
+var VIEWER_CONFIG = { url:'', viewKey:'', recordId:'' };
 var _role='';   // 'editor' | 'viewer'（由後端依密語判定）
 
 function cloudCfg(){
@@ -1337,9 +1338,16 @@ function applyRole(){
   var viewer=(_role==='viewer');
   document.body.classList.toggle('viewer-mode',viewer);
   document.querySelectorAll('input,select,textarea').forEach(function(el){
-    if(el.closest('#cloudSettingsMask'))return;       // 設定視窗保留可填
-    if(el.id==='customQ'||el.id==='urgentQ')return;   // 問題區保留可填
-    el.disabled=viewer;
+    if(el.closest('#cloudSettingsMask'))return;          // 設定視窗保留可填
+    var editable=!!el.closest('.viewer-editable');       // 05 / 06 區開放
+    el.disabled=viewer && !editable;
+  });
+}
+// 標記哪些區塊在唯讀模式下仍可編輯（依 sec-num）
+function markEditableCards(){
+  document.querySelectorAll('.card .sec-num').forEach(function(n){
+    var t=(n.textContent||'').trim();
+    if(t==='05'||t==='06'){var card=n.closest('.card');if(card)card.classList.add('viewer-editable');}
   });
 }
 // 保存/還原「問題區」（讓檢視者自動更新數字時不會被洗掉提問）
@@ -1440,9 +1448,7 @@ async function loadCloudRecord(id,name){
     if(out&&out.role)_role=out.role;
     var rec=out.record;
     if(!rec){alert('找不到這筆記錄，可能已被刪除。');refreshCloudList();return;}
-    var keepQ=(_role==='viewer')?snapshotQ():null;
     restoreFromData(rec.data||{});
-    if(keepQ)restoreQ(keepQ);
     applyRole();                          // restore 會重建欄位，重新套用鎖定
     setCurRecord({id:id,name:rec.name||name});
     _loadedUpdatedAt=rec.updated_at||0; _cloudDirty=false;
@@ -1545,7 +1551,7 @@ async function loadVersionIntoForm(hid){
 if(typeof window.autosave==='function'){
   var _origAutosave=window.autosave;
   window.autosave=function(){
-    try{ if(curRecord() && _role!=='viewer') _cloudDirty=true; }catch(e){}
+    try{ if(curRecord()) _cloudDirty=true; }catch(e){}
     return _origAutosave.apply(this,arguments);
   };
 }
@@ -1557,6 +1563,7 @@ document.body.appendChild(_toast);
 function toastCloud(msg){_toast.textContent=msg;_toast.style.opacity='1';clearTimeout(_toast._t);_toast._t=setTimeout(function(){_toast.style.opacity='0';},2600);}
 
 var _banner=document.createElement('div');
+_banner.id='updateBanner';
 _banner.style.cssText='position:fixed;top:0;left:0;right:0;background:#fef3c7;border-bottom:1px solid #f59e0b;color:#92400e;padding:11px 16px;font-size:14px;display:none;align-items:center;gap:12px;justify-content:center;z-index:10000;flex-wrap:wrap';
 _banner.innerHTML='<span id="bnrText"></span>'+
   '<button id="bnrLoad" style="padding:6px 14px;border-radius:7px;border:none;background:#f59e0b;color:#fff;cursor:pointer">載入最新版</button>'+
@@ -1613,6 +1620,7 @@ setInterval(pollCloud, 10000);
 })();
 
 // ── 預埋檢視模式：填了 VIEWER_CONFIG 且本機沒有設定過 → 自動唯讀連線並載入 ──
+markEditableCards();   // 先標記 05/06 區塊，鎖定/解鎖才會正確
 (function(){
   var c=cloudCfg();
   if(c.url&&c.key)return;                                  // 已手動設定過（可能是編輯者）
@@ -1646,7 +1654,7 @@ updateCloudUI();
   </div>
 </div>
 
-<div id="viewerBar">🔒 唯讀檢視中：數字資料無法修改。你仍可選取問題、填寫自訂問題並生成 AI Prompt。</div>
+<div id="viewerBar">🔒 唯讀檢視中：數字資料無法修改。你仍可填寫「05 近期重大事件 &amp; 行銷策略」「06 分析問題」並生成 AI Prompt。</div>
 
 </body>
 </html>
