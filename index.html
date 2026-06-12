@@ -194,6 +194,10 @@ pre.out-text{font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1
 /* Ad month cols */
 .ad-mo-header{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--gold);text-align:center;padding:4px 3px;background:var(--bg3);border-bottom:1px solid var(--border);white-space:nowrap;border-left:1px solid var(--border2)}
 
+/* Spend auto-sum row */
+input.ki[readonly]{cursor:default!important}
+.kpi-group-sep td{background:var(--bg3)!important}
+
 /* YOY toggle */
 .yoy-toggle{display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 12px;background:var(--bg3);border-radius:var(--radius-sm);border:1px solid var(--border);cursor:pointer;font-size:12px;color:var(--text2);user-select:none;width:fit-content}
 .yoy-toggle input{cursor:pointer;accent-color:var(--gold)}
@@ -465,18 +469,25 @@ pre.out-text{font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1
 
 <script>
 const KPI_METRICS=[
-  {key:'revenue',label:'總營收'},
-  {key:'new_cust_sales',label:'新客銷售額'},
-  {key:'ret_sales',label:'回客銷售額'},
-  {key:'new_cust_n',label:'新客人數'},
-  {key:'ret_n',label:'回客人數'},
-  {key:'new_orders',label:'新客訂單數'},
-  {key:'ret_orders',label:'回客訂單數'},
-  {key:'aov',label:'AOV 平均訂單金額'},
-  {key:'arpu',label:'ARPU 每客營收'},
-  {key:'ncac',label:'NCAC 獲客成本'},
-  {key:'ad_spend',label:'廣告總花費'},
+  {key:'revenue',label:'總營收',group:'revenue'},
+  {key:'new_cust_sales',label:'新客销售額',group:'revenue'},
+  {key:'ret_sales',label:'回客销售額',group:'revenue'},
+  {key:'new_cust_n',label:'新客人數',group:'customers'},
+  {key:'ret_n',label:'回客人數',group:'customers'},
+  {key:'new_arpu',label:'新客 ARPU',group:'customers'},
+  {key:'ret_arpu',label:'舊客 ARPU',group:'customers'},
+  {key:'ncac',label:'NCAC 獲客成本',group:'customers'},
+  {key:'mkt_total',label:'總行銷花費',group:'spend',autoSum:true},
+  {key:'spend_digital',label:'　數位廣告花費',group:'spend',isChild:true},
+  {key:'spend_prepaid',label:'　廣告預付儲値金花費',group:'spend',isChild:true},
+  {key:'spend_editorial',label:'　廣編稿花費',group:'spend',isChild:true},
+  {key:'spend_kol',label:'　KOL / KOC 花費',group:'spend',isChild:true},
+  {key:'spend_agency',label:'　Agency Fee',group:'spend',isChild:true},
+  {key:'spend_tools',label:'　行銷工具花費',group:'spend',isChild:true},
+  {key:'spend_platform',label:'　電商平台費',group:'spend',isChild:true},
+  {key:'spend_other',label:'　其他花費',group:'spend',isChild:true},
 ];
+const SPEND_CHILD_KEYS=['spend_digital','spend_prepaid','spend_editorial','spend_kol','spend_agency','spend_tools','spend_platform','spend_other'];
 // MONTHS is now dynamic
 let MONTHS=['2026-01','2026-02','2026-03','2026-04'];
 const FUNNEL_STAGES=[
@@ -616,6 +627,7 @@ function rebuildAll(){
     }
   }
   KPI_METRICS.forEach(m=>MONTHS.forEach(mo=>refreshRate(m.key,mo)));
+  refreshAllSpendTotals();
   updateProgress();
 }
 
@@ -645,22 +657,50 @@ function buildKpiHead(){
 function buildKpiRows(){
   const tbody=document.getElementById('kpiBody');
   tbody.innerHTML='';
+  let lastGroup=null;
   KPI_METRICS.forEach(m=>{
+    // Group separator row
+    if(m.group!==lastGroup){
+      lastGroup=m.group;
+      const groupLabels={revenue:'營收',customers:'客戶指標',spend:'行銷花費'};
+      const sep=document.createElement('tr');
+      const totalCols=1+MONTHS.length*3+1+(showYOY?MONTHS.length:0);
+      sep.innerHTML=`<td colspan="${totalCols}" style="padding:4px 10px 2px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--text3);background:var(--bg3);border-top:1px solid var(--border2)">${groupLabels[m.group]||m.group}</td>`;
+      tbody.appendChild(sep);
+    }
     const tr=document.createElement('tr');
-    let h=`<td class="tlbl">${m.label}</td>`;
+    // Auto-sum rows (mkt_total): inputs are read-only, computed
+    const isAutoSum=m.autoSum===true;
+    const isChild=m.isChild===true;
+    const rowStyle=isChild?'background:rgba(0,0,0,0.01)':'';
+    const lblStyle=isChild?'color:var(--text3);font-size:9px;':'';
+    let h=`<td class="tlbl" style="${lblStyle}">${m.label}</td>`;
     MONTHS.forEach((mo,i)=>{
       const bl=i>0?'class="tmo"':'';
-      h+=`<td ${bl} style="padding:2px">
-        <input class="ki" type="text" id="kpi_${m.key}_${mo}" placeholder="實際" oninput="autosave();updateProgress();refreshRate('${m.key}','${mo}')">
-      </td>
-      <td style="padding:2px">
-        <input class="ki tgt" type="text" id="tgt_${m.key}_${mo}" placeholder="目標" oninput="autosave();updateProgress();refreshRate('${m.key}','${mo}')">
-      </td>
-      <td style="padding:2px;text-align:center">
-        <span class="rb empty" id="rate_${m.key}_${mo}">—</span>
-      </td>`;
+      if(isAutoSum){
+        h+=`<td ${bl} style="padding:2px">
+          <input class="ki" type="text" id="kpi_${m.key}_${mo}" placeholder="自動加總" readonly style="background:var(--gold-bg);border-color:var(--gold-border);color:var(--text2);cursor:default">
+        </td>
+        <td style="padding:2px">
+          <input class="ki tgt" type="text" id="tgt_${m.key}_${mo}" placeholder="目標" oninput="autosave();updateProgress();refreshRate('${m.key}','${mo}')">
+        </td>
+        <td style="padding:2px;text-align:center">
+          <span class="rb empty" id="rate_${m.key}_${mo}">—</span>
+        </td>`;
+      } else {
+        const oninputExtra=isChild?`refreshSpendTotal('${mo}');`:'';
+        h+=`<td ${bl} style="padding:2px">
+          <input class="ki" type="text" id="kpi_${m.key}_${mo}" placeholder="實際" oninput="autosave();updateProgress();refreshRate('${m.key}','${mo}');${oninputExtra}">
+        </td>
+        <td style="padding:2px">
+          <input class="ki tgt" type="text" id="tgt_${m.key}_${mo}" placeholder="目標" oninput="autosave();updateProgress();refreshRate('${m.key}','${mo}')">
+        </td>
+        <td style="padding:2px;text-align:center">
+          <span class="rb empty" id="rate_${m.key}_${mo}">—</span>
+        </td>`;
+      }
     });
-    h+=`<td class="tann" style="padding:2px"><input class="ki ann" type="text" id="ann_${m.key}" placeholder="全年目標" oninput="autosave();updateProgress()"></td>`;
+    h+=`<td class="tann" style="padding:2px"><input class="ki ann" type="text" id="ann_${m.key}" placeholder="${isAutoSum?'自動加總':'全年目標'}" ${isAutoSum?'readonly style="background:var(--gold-bg);border-color:var(--gold-border);cursor:default"':''} oninput="${isAutoSum?'':"autosave();updateProgress()"}"></td>`;
     if(showYOY){
       MONTHS.forEach(mo=>{
         const ymo=mo.replace(/^(\d{4})/,(y)=>String(parseInt(y)-1));
@@ -668,8 +708,34 @@ function buildKpiRows(){
       });
     }
     tr.innerHTML=h;
+    if(rowStyle)tr.style.cssText=rowStyle;
     tbody.appendChild(tr);
   });
+}
+
+function refreshSpendTotal(mo){
+  // Sum all child spend keys for a given month into mkt_total
+  let sum=0,hasAny=false;
+  SPEND_CHILD_KEYS.forEach(k=>{
+    const v=parseFloat((g(`kpi_${k}_${mo}`)||'').replace(/,/g,''));
+    if(!isNaN(v)){sum+=v;hasAny=true;}
+  });
+  const el=document.getElementById(`kpi_mkt_total_${mo}`);
+  if(el)el.value=hasAny?sum.toLocaleString():'';
+  refreshRate('mkt_total',mo);
+  // Also refresh annual total
+  let annSum=0,annAny=false;
+  SPEND_CHILD_KEYS.forEach(k=>{
+    MONTHS.forEach(m=>{
+      const v=parseFloat((g(`kpi_${k}_${m}`)||'').replace(/,/g,''));
+      if(!isNaN(v)){annSum+=v;annAny=true;}
+    });
+  });
+  const annEl=document.getElementById('ann_mkt_total');
+  if(annEl)annEl.value=annAny?annSum.toLocaleString():'';
+}
+function refreshAllSpendTotals(){
+  MONTHS.forEach(mo=>refreshSpendTotal(mo));
 }
 
 function toggleYOY(){
@@ -697,6 +763,7 @@ function toggleYOY(){
     if(el&&v!==undefined&&v!==null)el.value=v;
   });
   KPI_METRICS.forEach(m=>MONTHS.forEach(mo=>refreshRate(m.key,mo)));
+  refreshAllSpendTotals();
   autosave();
 }
 
@@ -995,6 +1062,7 @@ function restoreFromData(d){
   }
   setVal('customQ',d.customQ);setVal('urgentQ',d.urgentQ);
   KPI_METRICS.forEach(m=>MONTHS.forEach(mo=>refreshRate(m.key,mo)));
+  refreshAllSpendTotals();
   updateProgress();
 }
 
@@ -1085,8 +1153,11 @@ function generatePrompt(){
   const headers=['指標\t\t'].concat(MONTHS.flatMap(mo=>[`${mo}實際`,`${mo}目標`,`達成率`])).concat(['全年目標']);
   if(showYOY)MONTHS.forEach(mo=>{const ymo=mo.replace(/^(\d{4})/,(y)=>String(parseInt(y)-1));headers.push(ymo+' YOY');});
   p+=headers.join('\t')+'\n'+'─'.repeat(120)+'\n';
+  const groupLabels={revenue:'── 營收',customers:'── 客戶指標',spend:'── 行銷花費'};
+  let lastGroup=null;
   KPI_METRICS.forEach(m=>{
-    let line=m.label.padEnd(16)+'\t';
+    if(m.group!==lastGroup){lastGroup=m.group;p+=`\n[${groupLabels[m.group]||m.group}]\n`;}
+    let line=m.label.padEnd(20)+'\t';
     MONTHS.forEach(mo=>{
       const act=g(`kpi_${m.key}_${mo}`)||'-',tgt=g(`tgt_${m.key}_${mo}`)||'-';
       const a=parseFloat(act.replace(/,/g,'')),t=parseFloat(tgt.replace(/,/g,''));
@@ -1201,9 +1272,11 @@ DEFAULT_ADS.forEach(a=>addAdRow(a.ch,a.funnel));
 addEventRow('','','');addEventRow('','','');
 renderMonthTags();
 loadData();
+refreshAllSpendTotals();
 setTimeout(pushUndo,600);
 
 </script>
+
 
 <style>
   .cloud-mask{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:9999}
@@ -1666,6 +1739,7 @@ updateCloudUI();
 </div>
 
 <div id="viewerBar">🔒 唯讀檢視中：數字資料無法修改。你仍可填寫「05 近期重大事件 &amp; 行銷策略」「06 分析問題」並生成 AI Prompt。</div>
+
 
 </body>
 </html>
